@@ -79,6 +79,16 @@ export async function refreshGraph(): Promise<GraphData> {
   return data
 }
 
+export interface Note {
+  title: string
+  preview: string
+}
+
+export async function getNotes(): Promise<{ notes: Note[] }> {
+  const { data } = await axios.get<{ notes: Note[] }>(`${BASE}/notes/`)
+  return data
+}
+
 export async function saveNote(text: string, title?: string): Promise<{ title: string; chunks_indexed: number }> {
   const { data } = await axios.post(`${BASE}/notes/`, { text, title: title ?? 'Quick Note' })
   return data

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import * as d3 from 'd3'
-import { RefreshCw, GitBranch, Search, X } from 'lucide-react'
+import { RefreshCw, GitBranch, Search, X, Maximize2 } from 'lucide-react'
 import { getGraph, refreshGraph, type GraphNode, type GraphEdge } from '../api'
 
 const CONCEPT_COLORS: Record<string, string> = {
@@ -49,6 +49,7 @@ export function KnowledgeGraph() {
   const selectedRef = useRef<SimNode | null>(null)
   const nodesRef = useRef<SimNode[]>([])
   const edgesRef = useRef<SimEdge[]>([])
+  const zoomRef = useRef<d3.ZoomBehavior<HTMLCanvasElement, unknown> | null>(null)
   const animFrameRef = useRef<number>(0)
 
   const [loading, setLoading] = useState(false)
@@ -200,6 +201,24 @@ export function KnowledgeGraph() {
     animFrameRef.current = requestAnimationFrame(tick)
   }, [draw])
 
+  const fitToScreen = useCallback(() => {
+    const canvas = canvasRef.current
+    const zoom = zoomRef.current
+    if (!canvas || !zoom || !nodesRef.current.length) return
+    const xs = nodesRef.current.map(n => n.x ?? 0)
+    const ys = nodesRef.current.map(n => n.y ?? 0)
+    const pad = 52
+    const minX = Math.min(...xs) - pad
+    const maxX = Math.max(...xs) + pad
+    const minY = Math.min(...ys) - pad
+    const maxY = Math.max(...ys) + pad
+    const scale = Math.min(canvas.width / (maxX - minX), canvas.height / (maxY - minY), 1.1)
+    const tx = (canvas.width - scale * (minX + maxX)) / 2
+    const ty = (canvas.height - scale * (minY + maxY)) / 2
+    const t = d3.zoomIdentity.translate(tx, ty).scale(scale)
+    d3.select(canvas).call(zoom.transform, t)
+  }, [])
+
   const buildGraph = useCallback((rawNodes: GraphNode[], rawEdges: GraphEdge[]) => {
     const degreeMap: Record<string, number> = {}
     for (const e of rawEdges) {
@@ -218,10 +237,10 @@ export function KnowledgeGraph() {
         label: n.label,
         type: n.type,
         degree: deg,
-        radius: 6 + Math.sqrt(deg) * 4,
+        radius: Math.min(6 + Math.sqrt(deg) * 3, 18),
         color: getNodeColor(n.type),
-        x: w / 2 + (Math.random() - 0.5) * 200,
-        y: h / 2 + (Math.random() - 0.5) * 200,
+        x: w / 2 + (Math.random() - 0.5) * 80,
+        y: h / 2 + (Math.random() - 0.5) * 80,
       }
     })
 
@@ -248,14 +267,15 @@ export function KnowledgeGraph() {
         'link',
         d3.forceLink<SimNode, SimEdge>(edges)
           .id(d => d.id)
-          .distance(d => 80 + (1 - d.weight) * 60)
-          .strength(0.5),
+          .distance(d => 50 + (1 - d.weight) * 35)
+          .strength(0.7),
       )
-      .force('charge', d3.forceManyBody<SimNode>().strength(d => -180 - d.radius * 10))
-      .force('center', d3.forceCenter(w / 2, h / 2))
-      .force('collide', d3.forceCollide<SimNode>().radius(d => d.radius + 16).strength(0.8))
-      .alphaDecay(0.018)
-  }, [])
+      .force('charge', d3.forceManyBody<SimNode>().strength(d => -55 - d.radius * 3))
+      .force('center', d3.forceCenter(w / 2, h / 2).strength(0.06))
+      .force('collide', d3.forceCollide<SimNode>().radius(d => d.radius + 10).strength(0.7))
+      .alphaDecay(0.028)
+      .on('end', fitToScreen)
+  }, [fitToScreen])
 
   const load = useCallback(async (forceRefresh = false) => {
     setLoading(true)
@@ -327,6 +347,7 @@ export function KnowledgeGraph() {
       })
       .on('zoom', e => { transformRef.current = e.transform })
     d3.select(canvas).call(zoom)
+    zoomRef.current = zoom
 
     const onMouseDown = (e: MouseEvent) => {
       if (e.button !== 0) return
@@ -469,6 +490,14 @@ export function KnowledgeGraph() {
               </button>
             )}
           </div>
+          <button
+            className="icon-btn"
+            onClick={fitToScreen}
+            title="Fit graph to screen"
+            disabled={loading}
+          >
+            <Maximize2 size={14} />
+          </button>
           <button
             className="icon-btn"
             onClick={() => load(true)}

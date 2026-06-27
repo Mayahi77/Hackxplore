@@ -12,6 +12,12 @@ class NoteRequest(BaseModel):
     title: str = "Quick Note"
 
 
+@router.get("/")
+async def list_notes(store: VectorStore = Depends(get_vector_store)):
+    notes = store.list_notes()
+    return {"notes": notes}
+
+
 @router.post("/")
 async def save_note(
     request: NoteRequest,

@@ -1,6 +1,8 @@
 import os
+import re
 import json
 import logging
+import asyncio
 from fastapi import APIRouter, Depends
 from google import genai
 from app.services.vector_store import VectorStore
@@ -56,6 +58,110 @@ Requirements:
 Text excerpts:
 {context}"""
 
+# Models tried in order when the primary is overloaded
+MODELS_TO_TRY = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.0-flash"]
+
+# Keyword taxonomy used when all Gemini calls fail
+CONCEPT_TAXONOMY: dict[str, list[str]] = {
+    "component": [
+        "piston", "carburetor", "reed valve", "crankshaft", "cylinder",
+        "spark plug", "exhaust pipe", "expansion chamber", "intake port",
+        "transfer port", "exhaust port", "bearing", "crankcase", "head gasket",
+        "water pump", "radiator", "ignition coil", "flywheel", "stator",
+        "needle valve", "float bowl", "air filter",
+    ],
+    "problem": [
+        "seizure", "detonation", "power loss", "hard starting", "overheating",
+        "scoring", "fouling", "flooding", "air leak", "compression loss",
+        "misfiring", "pre-ignition",
+    ],
+    "cause": [
+        "lean mixture", "rich mixture", "worn seal", "incorrect jetting",
+        "carbon build-up", "timing error", "wrong oil ratio", "clogged jet",
+        "damaged reed", "blocked port",
+    ],
+    "symptom": [
+        "blue smoke", "poor idle", "backfire", "knocking", "vibration",
+        "loss of power", "hard to start", "rough running",
+    ],
+    "solution": [
+        "adjust jetting", "replace seals", "check timing", "clean carburetor",
+        "new spark plug", "correct oil ratio", "pressure test", "rebuild engine",
+        "replace piston", "decarbonise",
+    ],
+    "parameter": [
+        "compression ratio", "ignition timing", "fuel ratio", "needle position",
+        "main jet", "pilot jet", "air screw", "port timing", "squish clearance",
+    ],
+}
+
+
+def _is_transient(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(k in msg for k in ("503", "unavailable", "overloaded", "capacity", "try again", "high demand"))
+
+
+def _parse_gemini_json(raw: str) -> dict:
+    raw = raw.strip()
+    if "```" in raw:
+        raw = raw[raw.index("{"):raw.rindex("}") + 1]
+    return json.loads(raw)
+
+
+def _build_keyword_graph(chunks: list[str]) -> dict:
+    all_text = " ".join(chunks).lower()
+    found: dict[str, dict] = {}
+    for node_type, terms in CONCEPT_TAXONOMY.items():
+        for term in terms:
+            if term in all_text:
+                slug = re.sub(r"[^a-z0-9]+", "_", term)
+                found[slug] = {"id": slug, "label": term.title(), "type": node_type}
+
+    edges: list[dict] = []
+    seen_pairs: set[tuple] = set()
+    for chunk in chunks:
+        cl = chunk.lower()
+        in_chunk = [slug for slug, meta in found.items() if meta["label"].lower() in cl]
+        for i, a in enumerate(in_chunk):
+            for b in in_chunk[i + 1:]:
+                pair = (min(a, b), max(a, b))
+                if pair not in seen_pairs:
+                    seen_pairs.add(pair)
+                    edges.append({"source": a, "target": b, "label": "related to", "weight": 0.6})
+
+    logger.info("Keyword fallback graph: %d nodes, %d edges", len(found), len(edges))
+    return {"nodes": list(found.values()), "edges": edges[:80]}
+
+
+async def _try_gemini(client: genai.Client, context: str) -> dict | None:
+    for model in MODELS_TO_TRY:
+        for attempt in range(3):
+            try:
+                response = client.models.generate_content(
+                    model=model,
+                    contents=EXTRACT_PROMPT.format(context=context),
+                )
+                data = _parse_gemini_json(response.text)
+                node_ids = {n["id"] for n in data.get("nodes", [])}
+                edges = [
+                    e for e in data.get("edges", [])
+                    if e.get("source") in node_ids and e.get("target") in node_ids
+                ]
+                logger.info("Graph extracted via %s: %d nodes, %d edges", model, len(node_ids), len(edges))
+                return {"nodes": data.get("nodes", []), "edges": edges}
+            except Exception as exc:
+                if _is_transient(exc) and attempt < 2:
+                    delay = (attempt + 1) * 6
+                    logger.warning(
+                        "Model %s attempt %d — transient error, retry in %ds: %s",
+                        model, attempt + 1, delay, exc,
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    logger.warning("Model %s attempt %d gave up: %s", model, attempt + 1, exc)
+                    break
+    return None
+
 
 async def _build_concept_graph(store: VectorStore) -> dict:
     global _graph_cache
@@ -79,29 +185,14 @@ async def _build_concept_graph(store: VectorStore) -> dict:
     context = "\n\n---\n\n".join(chunks[:25])
     client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
 
-    try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=EXTRACT_PROMPT.format(context=context),
-        )
-        raw = response.text.strip()
-        if "```" in raw:
-            start = raw.index("{")
-            end = raw.rindex("}") + 1
-            raw = raw[start:end]
+    result = await _try_gemini(client, context)
+    if result is None:
+        logger.warning("All Gemini models failed — using keyword fallback graph")
+        result = _build_keyword_graph(chunks)
 
-        data = json.loads(raw)
-        node_ids = {n["id"] for n in data.get("nodes", [])}
-        edges = [
-            e for e in data.get("edges", [])
-            if e.get("source") in node_ids and e.get("target") in node_ids
-        ]
-        result = {"nodes": data.get("nodes", []), "edges": edges}
+    if result.get("nodes"):
         _graph_cache = result
-        return result
-    except Exception:
-        logger.exception("Concept graph extraction failed")
-        return {"nodes": [], "edges": []}
+    return result
 
 
 @router.get("/")

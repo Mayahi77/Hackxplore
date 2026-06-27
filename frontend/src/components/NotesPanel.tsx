@@ -1,6 +1,6 @@
-import { useState, useRef } from 'react'
-import { Mic, MicOff, Save, CheckCircle, AlertCircle } from 'lucide-react'
-import { saveNote } from '../api'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { Mic, MicOff, Save, CheckCircle, AlertCircle, ChevronDown, ChevronUp, FileText } from 'lucide-react'
+import { saveNote, getNotes, type Note } from '../api'
 
 interface ISpeechRecognition extends EventTarget {
   continuous: boolean
@@ -28,7 +28,20 @@ export function NotesPanel() {
   const [recording, setRecording] = useState(false)
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
+  const [notes, setNotes] = useState<Note[]>([])
+  const [expandedNote, setExpandedNote] = useState<string | null>(null)
   const recognitionRef = useRef<ISpeechRecognition | null>(null)
+
+  const loadNotes = useCallback(async () => {
+    try {
+      const { notes: fetched } = await getNotes()
+      setNotes(fetched)
+    } catch {
+      // silently ignore — backend may not have notes yet
+    }
+  }, [])
+
+  useEffect(() => { loadNotes() }, [loadNotes])
 
   function startVoice() {
     const SR = window.SpeechRecognition ?? window.webkitSpeechRecognition
@@ -77,6 +90,7 @@ export function NotesPanel() {
       setStatus('saved')
       setText('')
       setTitle('')
+      await loadNotes()
       setTimeout(() => setStatus('idle'), 2500)
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Save failed'
@@ -104,7 +118,7 @@ export function NotesPanel() {
         placeholder="Describe a solution, observation, or expert insight…"
         value={text}
         onChange={e => setText(e.target.value)}
-        rows={10}
+        rows={7}
       />
 
       <div className="notes-actions">
@@ -135,6 +149,34 @@ export function NotesPanel() {
       {status === 'error' && (
         <div className="notes-feedback error">
           <AlertCircle size={14} /> {errorMsg}
+        </div>
+      )}
+
+      {notes.length > 0 && (
+        <div className="saved-notes-section">
+          <p className="panel-section-title">
+            Saved notes <span className="notes-count">{notes.length}</span>
+          </p>
+          <ul className="saved-notes-list">
+            {notes.map(note => {
+              const isOpen = expandedNote === note.title
+              return (
+                <li key={note.title} className="saved-note-card">
+                  <button
+                    className="saved-note-header"
+                    onClick={() => setExpandedNote(isOpen ? null : note.title)}
+                  >
+                    <FileText size={13} />
+                    <span className="saved-note-title">{note.title}</span>
+                    {isOpen ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                  </button>
+                  {isOpen && (
+                    <p className="saved-note-preview">{note.preview}{note.preview.length >= 300 ? '…' : ''}</p>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
         </div>
       )}
     </div>

@@ -74,3 +74,24 @@ class VectorStore:
         results = self._collection.get(include=["metadatas"])
         sources = {m.get("source", "unknown") for m in results["metadatas"]}
         return sorted(sources)
+
+    def list_notes(self) -> list[dict]:
+        if self._collection.count() == 0:
+            return []
+        try:
+            results = self._collection.get(
+                where={"doc_type": "note"},
+                include=["documents", "metadatas"],
+            )
+        except Exception:
+            return []
+        notes: dict[str, dict] = {}
+        for doc, meta in zip(results.get("documents") or [], results.get("metadatas") or []):
+            title = meta.get("filename", "Quick Note")
+            chunk_idx = int(meta.get("chunk_index", 0))
+            if title not in notes or chunk_idx < notes[title]["_idx"]:
+                notes[title] = {"title": title, "preview": doc[:300], "_idx": chunk_idx}
+        return [
+            {"title": v["title"], "preview": v["preview"]}
+            for v in sorted(notes.values(), key=lambda x: x["title"])
+        ]

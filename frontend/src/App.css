@@ -777,3 +777,122 @@ body {
 
 .notes-feedback.success { background: rgba(34,197,94,0.1); color: var(--success); }
 .notes-feedback.error { background: rgba(239,68,68,0.1); color: var(--error); }
+
+/* ── Saved notes list ── */
+.saved-notes-section {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.notes-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 0.68rem;
+  padding: 1px 7px;
+  color: var(--text-muted);
+  font-weight: 400;
+  margin-left: 6px;
+}
+
+.saved-notes-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.saved-note-card {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.saved-note-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text);
+  padding: 10px 14px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.15s;
+  font-size: 0.85rem;
+}
+
+.saved-note-header:hover { background: rgba(255,255,255,0.04); }
+
+.saved-note-header svg { flex-shrink: 0; color: var(--text-muted); }
+
+.saved-note-title {
+  flex: 1;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved-note-preview {
+  padding: 10px 14px 12px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  line-height: 1.55;
+  border-top: 1px solid var(--border);
+}
+
+/* ── Mobile responsive ── */
+@media (max-width: 680px) {
+  :root { --sidebar-w: 100%; }
+
+  .app { flex-direction: column; }
+
+  .sidebar {
+    width: 100%;
+    max-height: 45dvh;
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+    overflow-y: auto;
+    flex-shrink: 0;
+    gap: 14px;
+    padding: 14px 14px 10px;
+  }
+
+  .chat-area { min-height: 0; }
+
+  .messages { padding: 14px; gap: 12px; }
+
+  .bubble { max-width: 88%; padding: 10px 14px; }
+
+  .input-row { padding: 10px 14px 8px; }
+
+  .already-tried-row { padding: 0 14px 10px; }
+
+  .notes-panel { padding: 18px 14px; }
+
+  .graph-header {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+
+  .graph-search input { width: 90px; }
+
+  .graph-legend { padding: 5px 12px; gap: 8px; }
+
+  .graph-node-info {
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    max-width: none;
+  }
+}
