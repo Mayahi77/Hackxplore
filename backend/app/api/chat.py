@@ -1,8 +1,12 @@
+import logging
+import traceback
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 from app.services.rag import RAGService
 from app.services.vector_store import VectorStore
 from app.dependencies import get_vector_store
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
@@ -15,6 +19,7 @@ class Message(BaseModel):
 class ChatRequest(BaseModel):
     question: str
     history: list[Message] = []
+    already_checked: str | None = None
 
 
 class Source(BaseModel):
@@ -42,8 +47,13 @@ async def chat(
     history = [{"role": m.role, "content": m.content} for m in request.history]
 
     try:
-        result = rag.answer(request.question, history=history or None)
+        result = rag.answer(
+            request.question,
+            history=history or None,
+            already_checked=request.already_checked or None,
+        )
     except Exception as e:
+        logger.error("RAG error:\n%s", traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"AI service error: {str(e)}")
 
     return ChatResponse(

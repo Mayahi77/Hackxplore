@@ -1,6 +1,6 @@
-import { useState, useRef } from 'react'
-import { Upload, CheckCircle, AlertCircle, Loader } from 'lucide-react'
-import { uploadDocument } from '../api'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { Upload, CheckCircle, AlertCircle, Loader, Database } from 'lucide-react'
+import { uploadDocument, getSources } from '../api'
 
 interface UploadResult {
   filename: string
@@ -9,10 +9,46 @@ interface UploadResult {
   message?: string
 }
 
+const EXT_ICON: Record<string, string> = {
+  pdf: '📄',
+  xlsx: '📊',
+  xls: '📊',
+  docx: '📝',
+  doc: '📝',
+  txt: '📃',
+  md: '📃',
+}
+
+function fileIcon(name: string) {
+  const ext = name.split('.').pop()?.toLowerCase() ?? ''
+  return EXT_ICON[ext] ?? '📎'
+}
+
+function baseName(path: string) {
+  return path.split(/[/\\]/).pop() ?? path
+}
+
 export function UploadPanel() {
   const [results, setResults] = useState<UploadResult[]>([])
   const [loading, setLoading] = useState(false)
+  const [sources, setSources] = useState<string[]>([])
+  const [totalChunks, setTotalChunks] = useState(0)
+  const [sourcesLoading, setSourcesLoading] = useState(true)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  const refreshSources = useCallback(async () => {
+    try {
+      const data = await getSources()
+      setSources(data.sources)
+      setTotalChunks(data.total_chunks)
+    } catch {
+      // backend may not be ready yet — silently ignore
+    } finally {
+      setSourcesLoading(false)
+    }
+  }, [])
+
+  useEffect(() => { refreshSources() }, [refreshSources])
 
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return
@@ -22,17 +58,19 @@ export function UploadPanel() {
       try {
         const res = await uploadDocument(file)
         uploads.push({ filename: res.filename, chunks_indexed: res.chunks_indexed, status: 'success' })
-      } catch (e: any) {
+      } catch (e: unknown) {
+        const detail = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
         uploads.push({
           filename: file.name,
           chunks_indexed: 0,
           status: 'error',
-          message: e?.response?.data?.detail ?? 'Upload failed',
+          message: detail ?? 'Upload failed',
         })
       }
     }
     setResults(prev => [...uploads, ...prev])
     setLoading(false)
+    await refreshSources()
   }
 
   function onDrop(e: React.DragEvent) {
@@ -76,6 +114,35 @@ export function UploadPanel() {
           ))}
         </ul>
       )}
+
+      <div className="sources-section">
+        <div className="sources-section-header">
+          <div className="sources-section-title">
+            <Database size={12} />
+            <span>Indexed Documents</span>
+          </div>
+          {totalChunks > 0 && (
+            <span className="sources-chunk-count">{totalChunks} chunks</span>
+          )}
+        </div>
+
+        {sourcesLoading ? (
+          <div className="sources-loading">
+            <Loader size={14} className="spin" />
+          </div>
+        ) : sources.length === 0 ? (
+          <p className="sources-empty">No documents indexed yet</p>
+        ) : (
+          <ul className="sources-list-sidebar">
+            {sources.map(src => (
+              <li key={src} className="source-item">
+                <span className="source-item-icon">{fileIcon(src)}</span>
+                <span className="source-item-name" title={src}>{baseName(src)}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   )
 }

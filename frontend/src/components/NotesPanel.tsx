@@ -2,10 +2,23 @@ import { useState, useRef } from 'react'
 import { Mic, MicOff, Save, CheckCircle, AlertCircle } from 'lucide-react'
 import { saveNote } from '../api'
 
+interface ISpeechRecognition extends EventTarget {
+  continuous: boolean
+  interimResults: boolean
+  lang: string
+  onresult: ((e: SpeechRecognitionEvent) => void) | null
+  onerror: ((e: Event) => void) | null
+  onend: (() => void) | null
+  start(): void
+  stop(): void
+}
+
+type SpeechRecognitionCtor = new () => ISpeechRecognition
+
 declare global {
   interface Window {
-    SpeechRecognition: typeof SpeechRecognition
-    webkitSpeechRecognition: typeof SpeechRecognition
+    SpeechRecognition: SpeechRecognitionCtor
+    webkitSpeechRecognition: SpeechRecognitionCtor
   }
 }
 
@@ -15,7 +28,7 @@ export function NotesPanel() {
   const [recording, setRecording] = useState(false)
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle')
   const [errorMsg, setErrorMsg] = useState('')
-  const recognitionRef = useRef<SpeechRecognition | null>(null)
+  const recognitionRef = useRef<ISpeechRecognition | null>(null)
 
   function startVoice() {
     const SR = window.SpeechRecognition ?? window.webkitSpeechRecognition

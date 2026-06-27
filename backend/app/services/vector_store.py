@@ -1,21 +1,29 @@
 import os
 import chromadb
-from chromadb.utils import embedding_functions
+from chromadb import Documents, EmbeddingFunction, Embeddings
+from fastembed import TextEmbedding
 from typing import Optional
+
+
+class FastEmbedFunction(EmbeddingFunction):
+    """Lightweight ONNX-based local embeddings — no API calls, no PyTorch."""
+
+    def __init__(self, model_name: str = "BAAI/bge-small-en-v1.5"):
+        self._model = TextEmbedding(model_name=model_name)
+
+    def __call__(self, input: Documents) -> Embeddings:
+        return [emb.tolist() for emb in self._model.embed(list(input))]
 
 
 class VectorStore:
     def __init__(self):
         persist_dir = os.getenv("CHROMA_PERSIST_DIR", "./data/chroma")
         collection_name = os.getenv("COLLECTION_NAME", "two_stroke_knowledge")
-        embedding_model = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 
         os.makedirs(persist_dir, exist_ok=True)
 
         self._client = chromadb.PersistentClient(path=persist_dir)
-        self._ef = embedding_functions.SentenceTransformerEmbeddingFunction(
-            model_name=embedding_model
-        )
+        self._ef = FastEmbedFunction()
         self._collection = self._client.get_or_create_collection(
             name=collection_name,
             embedding_function=self._ef,
@@ -25,13 +33,24 @@ class VectorStore:
     def add_chunks(self, chunks: list[dict]) -> None:
         if not chunks:
             return
-        ids = [c["id"] for c in chunks]
-        documents = [c["text"] for c in chunks]
-        metadatas = [c["metadata"] for c in chunks]
-        self._collection.upsert(ids=ids, documents=documents, metadatas=metadatas)
+        batch_size = 50
+        for i in range(0, len(chunks), batch_size):
+            batch = chunks[i : i + batch_size]
+            self._collection.upsert(
+                ids=[c["id"] for c in batch],
+                documents=[c["text"] for c in batch],
+                metadatas=[c["metadata"] for c in batch],
+            )
 
     def search(self, query: str, n_results: int = 5, where: Optional[dict] = None) -> list[dict]:
-        kwargs = {"query_texts": [query], "n_results": n_results, "include": ["documents", "metadatas", "distances"]}
+        count = self._collection.count()
+        if count == 0:
+            return []
+        kwargs: dict = {
+            "query_texts": [query],
+            "n_results": min(n_results, count),
+            "include": ["documents", "metadatas", "distances"],
+        }
         if where:
             kwargs["where"] = where
 

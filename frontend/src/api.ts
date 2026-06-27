@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const BASE = 'http://localhost:8000/api'
+const BASE = (import.meta.env.VITE_API_URL ?? 'http://localhost:8000') + '/api'
 
 export interface Message {
   role: 'user' | 'assistant'
@@ -31,6 +31,7 @@ export interface GraphEdge {
   source: string
   target: string
   weight: number
+  label?: string
 }
 
 export interface GraphData {
@@ -38,8 +39,16 @@ export interface GraphData {
   edges: GraphEdge[]
 }
 
-export async function sendChat(question: string, history: Message[]): Promise<ChatResponse> {
-  const { data } = await axios.post<ChatResponse>(`${BASE}/chat/`, { question, history })
+export async function sendChat(
+  question: string,
+  history: Message[],
+  alreadyChecked?: string,
+): Promise<ChatResponse> {
+  const { data } = await axios.post<ChatResponse>(`${BASE}/chat/`, {
+    question,
+    history,
+    already_checked: alreadyChecked || null,
+  })
   return data
 }
 
@@ -62,6 +71,11 @@ export async function getHealth(): Promise<{ status: string; knowledge_base_chun
 
 export async function getGraph(): Promise<GraphData> {
   const { data } = await axios.get<GraphData>(`${BASE}/graph/`)
+  return data
+}
+
+export async function refreshGraph(): Promise<GraphData> {
+  const { data } = await axios.post<GraphData>(`${BASE}/graph/refresh`)
   return data
 }
 

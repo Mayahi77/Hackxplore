@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { Send, Zap, Trash2, MessageSquare, GitBranch, BookOpen } from 'lucide-react'
+import { Send, Zap, Trash2, MessageSquare, GitBranch, BookOpen, ChevronDown, ChevronUp } from 'lucide-react'
 import { sendChat, type Message, type Source } from './api'
 import { SourceBadge } from './components/SourceBadge'
 import { UploadPanel } from './components/UploadPanel'
@@ -15,6 +15,7 @@ interface ChatMessage {
   content: string
   sources?: Source[]
   loading?: boolean
+  alreadyTried?: string
 }
 
 const WELCOME: ChatMessage = {
@@ -33,6 +34,8 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('chat')
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME])
   const [input, setInput] = useState('')
+  const [alreadyTried, setAlreadyTried] = useState('')
+  const [showAlreadyTried, setShowAlreadyTried] = useState(false)
   const [loading, setLoading] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
 
@@ -44,8 +47,9 @@ export default function App() {
     const question = input.trim()
     if (!question || loading) return
 
+    const tried = alreadyTried.trim()
     setInput('')
-    setMessages(prev => [...prev, { role: 'user', content: question }])
+    setMessages(prev => [...prev, { role: 'user', content: question, alreadyTried: tried || undefined }])
     setLoading(true)
     setMessages(prev => [...prev, { role: 'assistant', content: '', loading: true }])
 
@@ -55,7 +59,7 @@ export default function App() {
       .map(m => ({ role: m.role, content: m.content }))
 
     try {
-      const res = await sendChat(question, history)
+      const res = await sendChat(question, history, tried || undefined)
       setMessages(prev => [
         ...prev.slice(0, -1),
         { role: 'assistant', content: res.answer, sources: res.sources },
@@ -114,7 +118,11 @@ export default function App() {
           </nav>
 
           {tab === 'chat' && (
-            <button className="icon-btn" onClick={() => setMessages([WELCOME])} title="Clear chat">
+            <button
+              className="icon-btn"
+              onClick={() => { setMessages([WELCOME]); setAlreadyTried(''); setShowAlreadyTried(false) }}
+              title="Clear chat"
+            >
               <Trash2 size={16} />
             </button>
           )}
@@ -133,6 +141,11 @@ export default function App() {
                     ) : (
                       <>
                         <ReactMarkdown>{msg.content}</ReactMarkdown>
+                        {msg.alreadyTried && (
+                          <div className="already-tried-tag">
+                            <span className="already-tried-label">Already tried:</span> {msg.alreadyTried}
+                          </div>
+                        )}
                         {msg.sources && msg.sources.length > 0 && (
                           <div className="sources">
                             <p className="sources-label">Sources</p>
@@ -151,22 +164,44 @@ export default function App() {
               <div ref={bottomRef} />
             </div>
 
-            <div className="input-row">
-              <textarea
-                className="input-box"
-                value={input}
-                onChange={e => setInput(e.target.value)}
-                onKeyDown={handleKeyDown}
-                placeholder="Describe the engine problem… (Enter to send, Shift+Enter for new line)"
-                rows={3}
-              />
-              <button
-                className="send-btn"
-                onClick={handleSend}
-                disabled={loading || !input.trim()}
-              >
-                <Send size={18} />
-              </button>
+            <div className="input-area">
+              <div className="input-row">
+                <textarea
+                  className="input-box"
+                  value={input}
+                  onChange={e => setInput(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                  placeholder="Describe the engine problem… (Enter to send, Shift+Enter for new line)"
+                  rows={3}
+                />
+                <button
+                  className="send-btn"
+                  onClick={handleSend}
+                  disabled={loading || !input.trim()}
+                >
+                  <Send size={18} />
+                </button>
+              </div>
+
+              <div className="already-tried-row">
+                <button
+                  className="already-tried-toggle"
+                  onClick={() => setShowAlreadyTried(v => !v)}
+                >
+                  {showAlreadyTried ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                  Already tried something?
+                  {alreadyTried && <span className="already-tried-dot" />}
+                </button>
+
+                {showAlreadyTried && (
+                  <input
+                    className="already-tried-input"
+                    value={alreadyTried}
+                    onChange={e => setAlreadyTried(e.target.value)}
+                    placeholder="e.g. spark plugs, carburetor, air filter…"
+                  />
+                )}
+              </div>
             </div>
           </>
         )}

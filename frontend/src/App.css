@@ -118,6 +118,80 @@ body {
 .result-chunks { color: var(--text-muted); font-size: 0.72rem; }
 .result-error { color: var(--error); font-size: 0.72rem; }
 
+/* Indexed documents list */
+.sources-section {
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+  padding-top: 14px;
+}
+
+.sources-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.sources-section-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.sources-chunk-count {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1px 7px;
+}
+
+.sources-loading {
+  display: flex;
+  justify-content: center;
+  padding: 10px 0;
+  color: var(--text-muted);
+}
+
+.sources-empty {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  padding: 6px 0;
+}
+
+.sources-list-sidebar {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.source-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  font-size: 0.78rem;
+}
+
+.source-item-icon { font-size: 0.85rem; flex-shrink: 0; }
+
+.source-item-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text);
+}
+
 /* Chat area */
 .chat-area {
   flex: 1;
@@ -262,13 +336,30 @@ body {
   30% { transform: translateY(-6px); opacity: 1; }
 }
 
+/* Already tried tag in user bubble */
+.already-tried-tag {
+  margin-top: 8px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+.already-tried-label {
+  font-weight: 600;
+  color: var(--accent);
+  font-style: normal;
+}
+
+/* Input area wrapper */
+.input-area {
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
 /* Input row */
 .input-row {
   display: flex;
   gap: 10px;
-  padding: 16px 24px;
-  border-top: 1px solid var(--border);
-  background: var(--surface);
+  padding: 16px 24px 10px;
   align-items: flex-end;
 }
 
@@ -306,6 +397,53 @@ body {
 
 .send-btn:hover:not(:disabled) { background: #2563eb; }
 .send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Already tried collapsible row */
+.already-tried-row {
+  padding: 0 24px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.already-tried-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0;
+  width: fit-content;
+  transition: color 0.15s;
+}
+
+.already-tried-toggle:hover { color: var(--text); }
+
+.already-tried-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-left: 2px;
+}
+
+.already-tried-input {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.82rem;
+  padding: 7px 12px;
+  font-family: inherit;
+  width: 100%;
+  transition: border-color 0.15s;
+}
+
+.already-tried-input:focus { outline: none; border-color: var(--accent); }
+.already-tried-input::placeholder { color: var(--text-muted); }
 
 .spin { animation: spin 1s linear infinite; }
 
@@ -350,8 +488,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 24px;
+  padding: 10px 20px;
   border-bottom: 1px solid var(--border);
+  gap: 12px;
 }
 
 .graph-title {
@@ -360,12 +499,60 @@ body {
   gap: 8px;
   font-weight: 600;
   font-size: 0.9rem;
+  flex-shrink: 0;
 }
+
+.graph-stats {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.graph-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.graph-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  color: var(--text-muted);
+}
+
+.graph-search input {
+  background: none;
+  border: none;
+  outline: none;
+  font-size: 0.8rem;
+  color: var(--text);
+  width: 140px;
+}
+
+.graph-search input::placeholder { color: var(--text-muted); }
+
+.search-clear {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  padding: 0;
+  line-height: 1;
+}
+
+.search-clear:hover { color: var(--text); }
 
 .graph-legend {
   display: flex;
   gap: 12px;
-  padding: 8px 24px;
+  padding: 6px 20px;
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
 }
@@ -374,22 +561,24 @@ body {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 0.75rem;
+  font-size: 0.72rem;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
 
 .legend-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   flex-shrink: 0;
 }
 
 .graph-canvas {
   flex: 1;
-  background: var(--bg);
+  background: #080a10;
+  position: relative;
+  overflow: hidden;
 }
 
 .graph-empty {
@@ -401,6 +590,72 @@ body {
   gap: 12px;
   color: var(--text-muted);
   font-size: 0.9rem;
+}
+
+.graph-node-info {
+  position: absolute;
+  bottom: 16px;
+  left: 16px;
+  background: rgba(26, 29, 39, 0.92);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  backdrop-filter: blur(8px);
+  pointer-events: all;
+  max-width: 280px;
+}
+
+.graph-node-color {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.graph-node-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.graph-node-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.graph-node-meta {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.graph-node-edges {
+  list-style: none;
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.graph-node-edges li {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.72rem;
+  line-height: 1.4;
+}
+
+.edge-relation {
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-style: italic;
 }
 
 /* ── Notes Panel ── */
