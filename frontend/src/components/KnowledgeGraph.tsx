@@ -66,11 +66,14 @@ export function KnowledgeGraph() {
     const ctx = canvas.getContext('2d')
     if (!ctx) return
 
+    const dpr = window.devicePixelRatio || 1
     const { width, height } = canvas
     ctx.clearRect(0, 0, width, height)
 
     const t = transformRef.current
     ctx.save()
+    // Map the high-resolution backing store back to CSS-pixel coordinates
+    ctx.scale(dpr, dpr)
     ctx.translate(t.x, t.y)
     ctx.scale(t.k, t.k)
 
@@ -80,19 +83,22 @@ export function KnowledgeGraph() {
     const selected = selectedRef.current
     const query = searchQuery.toLowerCase()
 
+    // Focus node drives the highlight: a click locks it, otherwise hover does
+    // (Obsidian-style — hovering dims everything except the node + neighbors).
+    const focus = selected ?? hovered
     const neighborIds = new Set<string>()
     const neighborEdges = new Set<SimEdge>()
-    if (selected) {
-      neighborIds.add(selected.id)
+    if (focus) {
+      neighborIds.add(focus.id)
       for (const e of edges) {
         const s = e.source as SimNode
         const tgt = e.target as SimNode
-        if (s.id === selected.id) { neighborIds.add(tgt.id); neighborEdges.add(e) }
-        if (tgt.id === selected.id) { neighborIds.add(s.id); neighborEdges.add(e) }
+        if (s.id === focus.id) { neighborIds.add(tgt.id); neighborEdges.add(e) }
+        if (tgt.id === focus.id) { neighborIds.add(s.id); neighborEdges.add(e) }
       }
     }
 
-    const dimAll = selected !== null
+    const dimAll = focus !== null
 
     // Draw edges
     for (const e of edges) {
@@ -103,12 +109,33 @@ export function KnowledgeGraph() {
       const isNeighborEdge = dimAll && neighborEdges.has(e)
       const alpha = dimAll ? (isNeighborEdge ? 0.75 : 0.04) : 0.22
 
+      const angle = Math.atan2(tgt.y! - s.y!, tgt.x! - s.x!)
+
+      // Stop the line at the edge of the target node so the arrowhead reads
+      const headLen = Math.min(8, Math.max(5, tgt.radius * 0.8))
+      const stopX = tgt.x! - Math.cos(angle) * (tgt.radius + headLen * 0.5)
+      const stopY = tgt.y! - Math.sin(angle) * (tgt.radius + headLen * 0.5)
+
       ctx.beginPath()
       ctx.moveTo(s.x!, s.y!)
-      ctx.lineTo(tgt.x!, tgt.y!)
+      ctx.lineTo(stopX, stopY)
       ctx.strokeStyle = `rgba(100, 130, 200, ${alpha})`
       ctx.lineWidth = Math.max(0.5, e.weight * 2.5)
       ctx.stroke()
+
+      // Directional arrowhead pointing at the target concept
+      const headAlpha = Math.min(1, alpha * 1.6)
+      ctx.save()
+      ctx.translate(stopX, stopY)
+      ctx.rotate(angle)
+      ctx.beginPath()
+      ctx.moveTo(headLen * 0.5, 0)
+      ctx.lineTo(-headLen * 0.5, headLen * 0.45)
+      ctx.lineTo(-headLen * 0.5, -headLen * 0.45)
+      ctx.closePath()
+      ctx.fillStyle = `rgba(120, 150, 210, ${headAlpha})`
+      ctx.fill()
+      ctx.restore()
 
       // Render relationship label along highlighted edges
       if (isNeighborEdge && e.label && t.k > 0.3) {
@@ -173,12 +200,24 @@ export function KnowledgeGraph() {
 
       ctx.globalAlpha = 1
 
-      const showLabel = t.k > 0.4 || isHovered || isSelected || matchesSearch
-      if (showLabel) {
-        const labelAlpha = dimAll
-          ? isNeighbor ? 1 : 0.1
-          : query ? (matchesSearch ? 1 : 0.1) : 1
-        ctx.globalAlpha = labelAlpha
+      // Declutter + smooth fade: hub nodes fade in early, others only when
+      // zoomed in. Interacted/searched nodes are always fully shown.
+      const interacted = isHovered || isSelected || matchesSearch
+      const isHub = n.degree >= 3
+      const ramp = (k: number, from: number, to: number) =>
+        Math.max(0, Math.min(1, (k - from) / (to - from)))
+      let zoomFade: number
+      if (interacted) zoomFade = 1
+      else if (isHub) zoomFade = ramp(t.k, 0.4, 0.65)
+      else zoomFade = ramp(t.k, 1.1, 1.6)
+
+      let dimMul = 1
+      if (dimAll && !isNeighbor && !interacted) dimMul = 0.12
+      if (query && !matchesSearch) dimMul = 0.12
+
+      const labelOpacity = zoomFade * dimMul
+      if (labelOpacity > 0.02) {
+        ctx.globalAlpha = labelOpacity
         const fontSize = Math.max(9, 11 / t.k)
         ctx.font = `500 ${fontSize}px Inter, system-ui, sans-serif`
         ctx.fillStyle = '#cbd5e1'
@@ -205,6 +244,9 @@ export function KnowledgeGraph() {
     const canvas = canvasRef.current
     const zoom = zoomRef.current
     if (!canvas || !zoom || !nodesRef.current.length) return
+    const dpr = window.devicePixelRatio || 1
+    const cssW = canvas.width / dpr
+    const cssH = canvas.height / dpr
     const xs = nodesRef.current.map(n => n.x ?? 0)
     const ys = nodesRef.current.map(n => n.y ?? 0)
     const pad = 52
@@ -212,9 +254,9 @@ export function KnowledgeGraph() {
     const maxX = Math.max(...xs) + pad
     const minY = Math.min(...ys) - pad
     const maxY = Math.max(...ys) + pad
-    const scale = Math.min(canvas.width / (maxX - minX), canvas.height / (maxY - minY), 1.1)
-    const tx = (canvas.width - scale * (minX + maxX)) / 2
-    const ty = (canvas.height - scale * (minY + maxY)) / 2
+    const scale = Math.min(cssW / (maxX - minX), cssH / (maxY - minY), 1.1)
+    const tx = (cssW - scale * (minX + maxX)) / 2
+    const ty = (cssH - scale * (minY + maxY)) / 2
     const t = d3.zoomIdentity.translate(tx, ty).scale(scale)
     d3.select(canvas).call(zoom.transform, t)
   }, [])
@@ -227,8 +269,9 @@ export function KnowledgeGraph() {
     }
 
     const canvas = canvasRef.current
-    const w = canvas?.width ?? 800
-    const h = canvas?.height ?? 600
+    const dpr = window.devicePixelRatio || 1
+    const w = canvas ? canvas.width / dpr : 800
+    const h = canvas ? canvas.height / dpr : 600
 
     const nodes: SimNode[] = rawNodes.map(n => {
       const deg = degreeMap[n.id] ?? 0
@@ -267,14 +310,27 @@ export function KnowledgeGraph() {
         'link',
         d3.forceLink<SimNode, SimEdge>(edges)
           .id(d => d.id)
-          .distance(d => 50 + (1 - d.weight) * 35)
-          .strength(0.7),
+          .distance(d => 70 + (1 - d.weight) * 50)
+          .strength(d => 0.3 + d.weight * 0.4),
       )
-      .force('charge', d3.forceManyBody<SimNode>().strength(d => -55 - d.radius * 3))
-      .force('center', d3.forceCenter(w / 2, h / 2).strength(0.06))
-      .force('collide', d3.forceCollide<SimNode>().radius(d => d.radius + 10).strength(0.7))
-      .alphaDecay(0.028)
+      .force('charge', d3.forceManyBody<SimNode>().strength(d => -240 - d.radius * 8).distanceMax(600))
+      .force('center', d3.forceCenter(w / 2, h / 2))
+      // Light gravity toward center keeps disconnected components from drifting apart
+      .force('x', d3.forceX(w / 2).strength(0.03))
+      .force('y', d3.forceY(h / 2).strength(0.03))
+      .force('collide', d3.forceCollide<SimNode>().radius(d => d.radius + 22).strength(0.9))
+      .velocityDecay(0.4)
+      .alphaDecay(0.022)
       .on('end', fitToScreen)
+
+    // Fit once the layout has roughly settled, not only at full stop
+    let fitted = false
+    simRef.current.on('tick.fit', () => {
+      if (!fitted && simRef.current && simRef.current.alpha() < 0.08) {
+        fitted = true
+        fitToScreen()
+      }
+    })
   }, [fitToScreen])
 
   const load = useCallback(async (forceRefresh = false) => {
@@ -306,8 +362,9 @@ export function KnowledgeGraph() {
     if (!canvas || !container) return
 
     const resize = () => {
-      canvas.width = container.clientWidth
-      canvas.height = container.clientHeight
+      const dpr = window.devicePixelRatio || 1
+      canvas.width = container.clientWidth * dpr
+      canvas.height = container.clientHeight * dpr
     }
     resize()
     const ro = new ResizeObserver(resize)
@@ -519,18 +576,20 @@ export function KnowledgeGraph() {
       </div>
 
       <div className="graph-canvas" ref={containerRef}>
-        {loading ? (
-          <div className="graph-empty">
+        {/* Canvas stays mounted so its zoom/drag bindings are never orphaned */}
+        <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
+
+        {loading && (
+          <div className="graph-empty graph-overlay">
             <RefreshCw size={32} className="spin" />
             <p>Extracting concepts from knowledge base…</p>
           </div>
-        ) : empty ? (
-          <div className="graph-empty">
+        )}
+        {!loading && empty && (
+          <div className="graph-empty graph-overlay">
             <GitBranch size={32} />
             <p>Upload documents then click ↻ to build the concept graph</p>
           </div>
-        ) : (
-          <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
         )}
 
         {selectedInfo && (

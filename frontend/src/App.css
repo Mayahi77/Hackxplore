@@ -592,6 +592,16 @@ body {
   font-size: 0.9rem;
 }
 
+/* Loading/empty states float above the always-mounted canvas */
+.graph-overlay {
+  position: absolute;
+  inset: 0;
+  height: auto;
+  background: rgba(8, 10, 16, 0.82);
+  backdrop-filter: blur(2px);
+  z-index: 2;
+}
+
 .graph-node-info {
   position: absolute;
   bottom: 16px;
