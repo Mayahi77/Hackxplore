@@ -9,10 +9,10 @@ os.environ["CHROMA_TELEMETRY"] = "False"
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import chat, documents, graph, notes
+from app.api import chat, documents, graph, notes, settings
 
 app = FastAPI(
-    title="TwoStroke AI Knowledge Base",
+    title="StrokeIT Knowledge Base",
     description="AI-powered two-stroke engine troubleshooting assistant",
     version="0.1.0",
 )
@@ -20,6 +20,9 @@ app = FastAPI(
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "").split(",")
 CORS_ORIGINS = [o.strip() for o in CORS_ORIGINS if o.strip()] or [
     "http://localhost:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:5174",
     "http://localhost:3000",
 ]
 
@@ -36,8 +39,9 @@ app.include_router(chat.router, prefix="/api")
 app.include_router(documents.router, prefix="/api")
 app.include_router(graph.router, prefix="/api")
 app.include_router(notes.router, prefix="/api")
+app.include_router(settings.router, prefix="/api")
 
 
 @app.get("/")
 async def root():
-    return {"status": "running", "service": "TwoStroke AI Knowledge Base"}
+    return {"status": "running", "service": "StrokeIT Knowledge Base"}

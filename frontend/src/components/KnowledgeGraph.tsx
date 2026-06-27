@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import * as d3 from 'd3'
-import { RefreshCw, GitBranch, Search, X, Maximize2 } from 'lucide-react'
-import { getGraph, refreshGraph, type GraphNode, type GraphEdge } from '../api'
+import { ExternalLink, RefreshCw, GitBranch, Search, X, Maximize2 } from 'lucide-react'
+import {
+  documentFileUrl,
+  getGraph,
+  refreshGraph,
+  type GraphEvidence,
+  type GraphNode,
+  type GraphEdge,
+} from '../api'
 
 const CONCEPT_COLORS: Record<string, string> = {
   component: '#3b82f6',
@@ -10,6 +17,9 @@ const CONCEPT_COLORS: Record<string, string> = {
   symptom:   '#eab308',
   solution:  '#22c55e',
   parameter: '#a855f7',
+  test:      '#14b8a6',
+  measurement: '#06b6d4',
+  failure_mode: '#f43f5e',
 }
 
 const FALLBACK_COLOR = '#6b7280'
@@ -21,15 +31,27 @@ interface SimNode extends d3.SimulationNodeDatum {
   degree: number
   radius: number
   color: string
+  evidence: GraphEvidence[]
 }
 
 interface SimEdge extends d3.SimulationLinkDatum<SimNode> {
   weight: number
   label?: string
+  confidence: number
+  evidence: GraphEvidence[]
 }
 
 function getNodeColor(type: string): string {
   return CONCEPT_COLORS[type] ?? FALLBACK_COLOR
+}
+
+// "lean_mixture" → "Lean Mixture" — used when a node has no extracted label
+function humanizeId(id: string): string {
+  return (id || 'concept')
+    .replace(/[_-]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\b\w/g, c => c.toUpperCase())
 }
 
 function lighten(hex: string, amount: number): string {
@@ -40,7 +62,46 @@ function lighten(hex: string, amount: number): string {
   return `rgb(${r},${g},${b})`
 }
 
-export function KnowledgeGraph() {
+function evidenceUrl(evidence: GraphEvidence): string {
+  const base = documentFileUrl(evidence.filename)
+  return evidence.doc_type === 'pdf' && evidence.page ? `${base}#page=${evidence.page}` : base
+}
+
+function GraphEvidenceList({ evidence }: { evidence: GraphEvidence[] }) {
+  if (evidence.length === 0) {
+    return <p className="graph-evidence-empty">No direct evidence attached yet.</p>
+  }
+  return (
+    <ul className="graph-evidence-list">
+      {evidence.map(item => (
+        <li key={`${item.id}-${item.filename}-${item.page}`} className="graph-evidence-item">
+          <div className="graph-evidence-head">
+            <span className="graph-evidence-id">{item.id}</span>
+            <span className="graph-evidence-file">{item.filename}</span>
+            {item.page && <span className="graph-evidence-page">p.{item.page}</span>}
+            {item.has_file && (
+              <a
+                href={evidenceUrl(item)}
+                target="_blank"
+                rel="noopener noreferrer"
+                title={item.doc_type === 'pdf' && item.page ? `Open at page ${item.page}` : 'Open source file'}
+              >
+                <ExternalLink size={12} />
+              </a>
+            )}
+          </div>
+          <p>{item.snippet}</p>
+        </li>
+      ))}
+    </ul>
+  )
+}
+
+interface KnowledgeGraphProps {
+  refreshKey?: number
+}
+
+export function KnowledgeGraph({ refreshKey = 0 }: KnowledgeGraphProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const simRef = useRef<d3.Simulation<SimNode, SimEdge> | null>(null)
@@ -59,6 +120,12 @@ export function KnowledgeGraph() {
   const [edgeCount, setEdgeCount] = useState(0)
   const [selectedInfo, setSelectedInfo] = useState<SimNode | null>(null)
   const [selectedEdges, setSelectedEdges] = useState<SimEdge[]>([])
+  const [activeTypes, setActiveTypes] = useState<Set<string>>(() => new Set(Object.keys(CONCEPT_COLORS)))
+  const initialLoadRef = useRef(false)
+  const refreshSeenRef = useRef(refreshKey)
+  const activeTypesRef = useRef(activeTypes)
+
+  useEffect(() => { activeTypesRef.current = activeTypes }, [activeTypes])
 
   const draw = useCallback((searchQuery: string) => {
     const canvas = canvasRef.current
@@ -82,6 +149,7 @@ export function KnowledgeGraph() {
     const hovered = hoveredRef.current
     const selected = selectedRef.current
     const query = searchQuery.toLowerCase()
+    const enabledTypes = activeTypesRef.current
 
     // Focus node drives the highlight: a click locks it, otherwise hover does
     // (Obsidian-style — hovering dims everything except the node + neighbors).
@@ -105,9 +173,11 @@ export function KnowledgeGraph() {
       const s = e.source as SimNode
       const tgt = e.target as SimNode
       if (s.x === undefined || tgt.x === undefined) continue
+      const typeVisible = enabledTypes.has(s.type) && enabledTypes.has(tgt.type)
 
       const isNeighborEdge = dimAll && neighborEdges.has(e)
-      const alpha = dimAll ? (isNeighborEdge ? 0.75 : 0.04) : 0.22
+      let alpha = dimAll ? (isNeighborEdge ? 0.75 : 0.04) : 0.22
+      if (!typeVisible) alpha = Math.min(alpha, 0.025)
 
       const angle = Math.atan2(tgt.y! - s.y!, tgt.x! - s.x!)
 
@@ -164,10 +234,13 @@ export function KnowledgeGraph() {
       const isSelected = selected?.id === n.id
       const isNeighbor = dimAll && neighborIds.has(n.id)
       const matchesSearch = query.length > 0 && n.label.toLowerCase().includes(query)
+      const typeVisible = enabledTypes.has(n.type)
 
       let alpha = 1
+      if (!typeVisible) alpha = 0.04
       if (dimAll && !isNeighbor) alpha = 0.08
       if (query && !matchesSearch) alpha = 0.08
+      if (!typeVisible && (dimAll || query)) alpha = 0.03
 
       const r = n.radius * (isHovered || isSelected ? 1.4 : 1)
 
@@ -203,15 +276,20 @@ export function KnowledgeGraph() {
       // Declutter + smooth fade: hub nodes fade in early, others only when
       // zoomed in. Interacted/searched nodes are always fully shown.
       const interacted = isHovered || isSelected || matchesSearch
-      const isHub = n.degree >= 3
+      // Lower the hub bar to degree 2, and bring both fade ramps down so labels
+      // are already visible at the default fit-to-screen zoom (which caps at
+      // 1.1x). Previously non-hub labels only began appearing at 1.1x–1.6x, so
+      // most low-degree nodes looked nameless until the user manually zoomed in.
+      const isHub = n.degree >= 2
       const ramp = (k: number, from: number, to: number) =>
         Math.max(0, Math.min(1, (k - from) / (to - from)))
       let zoomFade: number
       if (interacted) zoomFade = 1
-      else if (isHub) zoomFade = ramp(t.k, 0.4, 0.65)
-      else zoomFade = ramp(t.k, 1.1, 1.6)
+      else if (isHub) zoomFade = ramp(t.k, 0.28, 0.5)
+      else zoomFade = ramp(t.k, 0.55, 0.85)
 
       let dimMul = 1
+      if (!typeVisible) dimMul = 0.08
       if (dimAll && !isNeighbor && !interacted) dimMul = 0.12
       if (query && !matchesSearch) dimMul = 0.12
 
@@ -275,13 +353,17 @@ export function KnowledgeGraph() {
 
     const nodes: SimNode[] = rawNodes.map(n => {
       const deg = degreeMap[n.id] ?? 0
+      // Never let a node be nameless: fall back to a humanized id if the
+      // extractor returned an empty/missing label.
+      const label = (n.label ?? '').trim() || humanizeId(n.id)
       return {
         id: n.id,
-        label: n.label,
+        label,
         type: n.type,
         degree: deg,
         radius: Math.min(6 + Math.sqrt(deg) * 3, 18),
         color: getNodeColor(n.type),
+        evidence: n.evidence ?? [],
         x: w / 2 + (Math.random() - 0.5) * 80,
         y: h / 2 + (Math.random() - 0.5) * 80,
       }
@@ -294,6 +376,8 @@ export function KnowledgeGraph() {
         target: nodeById.get(e.target)!,
         weight: e.weight,
         label: e.label,
+        confidence: e.confidence ?? e.weight,
+        evidence: e.evidence ?? [],
       }))
       .filter(e => e.source && e.target)
 
@@ -515,12 +599,31 @@ export function KnowledgeGraph() {
     return () => cancelAnimationFrame(animFrameRef.current)
   }, [tick])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => {
+    if (initialLoadRef.current) return
+    initialLoadRef.current = true
+    load(refreshKey > 0)
+  }, [load, refreshKey])
+
+  useEffect(() => {
+    if (refreshSeenRef.current === refreshKey) return
+    refreshSeenRef.current = refreshKey
+    load(true)
+  }, [load, refreshKey])
 
   function clearSelection() {
     selectedRef.current = null
     setSelectedInfo(null)
     setSelectedEdges([])
+  }
+
+  function toggleType(type: string) {
+    setActiveTypes(prev => {
+      const next = new Set(prev)
+      if (next.has(type) && next.size > 1) next.delete(type)
+      else next.add(type)
+      return next
+    })
   }
 
   return (
@@ -568,10 +671,15 @@ export function KnowledgeGraph() {
 
       <div className="graph-legend">
         {Object.entries(CONCEPT_COLORS).map(([type, color]) => (
-          <span key={type} className="legend-item">
+          <button
+            key={type}
+            className={`legend-item ${activeTypes.has(type) ? 'active' : 'muted'}`}
+            onClick={() => toggleType(type)}
+            title={`Toggle ${type}`}
+          >
             <span className="legend-dot" style={{ background: color }} />
             {type}
-          </span>
+          </button>
         ))}
       </div>
 
@@ -612,12 +720,22 @@ export function KnowledgeGraph() {
                     const arrow = s.id === selectedInfo.id ? '→' : '←'
                     return (
                       <li key={i}>
-                        <span className="edge-relation">{arrow} {e.label ?? 'related'}</span>
-                        <span style={{ color: getNodeColor(other.type) }}>{other.label}</span>
+                        <div className="graph-edge-row">
+                          <span className="edge-relation">{arrow} {e.label ?? 'related'}</span>
+                          <span style={{ color: getNodeColor(other.type) }}>{other.label}</span>
+                          <span className="graph-edge-confidence">{Math.round(e.confidence * 100)}%</span>
+                        </div>
+                        <GraphEvidenceList evidence={e.evidence} />
                       </li>
                     )
                   })}
                 </ul>
+              )}
+              {selectedInfo.evidence.length > 0 && (
+                <div className="graph-node-evidence-section">
+                  <span className="graph-evidence-section-title">Concept evidence</span>
+                  <GraphEvidenceList evidence={selectedInfo.evidence} />
+                </div>
               )}
             </div>
             <button className="search-clear" onClick={clearSelection}>
